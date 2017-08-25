@@ -1,0 +1,97 @@
+###########################################################################
+#		  
+#  Build the image:                                               		  
+#    $ docker build -t cppsharp:dev -f Dockerfile.dev --no-cache . 	# longer but more accurate
+#    $ docker build -t cppsharp:dev -f Dockerfile.dev . 			# faster but increase mistakes
+#                                                                 		  
+#  Run the container:                                             		  
+#    $ docker run -ti --rm -v $(pwd):/home/cppsharp -v $(pwd)/dist/output:/home/cppsharp/build/gmake/Release_x64 cppsharp:dev
+#              		  
+###########################################################################
+
+FROM frolvlad/alpine-glibc:alpine-3.6
+LABEL maintainer "Luc Michalski <michalski.luc@gmail.com>"
+
+## #################################################################
+## Build - ARGS
+## #################################################################
+
+ARG DOCKER_USER="cppsharp"
+ARG DOCKER_USER_GID=${DOCKER_USER_GID:-"1000"}
+ARG DOCKER_USER_UID=${DOCKER_USER_UID:-"1000"}
+
+ARG BUILD_APK=${BUILD_APK:-"musl-dev make cmake linux-headers g++ gcc libmagic gzip \
+							mono-dev openssl-dev autoconf automake tar zip ninja"}
+# llvm llvm-dev
+
+ARG RUNTIME_APK=${RUNTIME_APK:-"ca-certificates openssl libssh2 bash git lua curl wget tar \
+								mono cppcheck valgrind findutils pkgconf libtool"}
+
+## #################################################################
+## Build - Set env variables (inherit username from build args)
+## #################################################################
+
+## Docker - USER
+ENV DOCKER_USER_HOME=${DOCKER_USER_HOME:-"/home/$DOCKER_USER"} \
+	DOCKER_USER=${DOCKER_USER:-"cppsharp"}
+
+## Docker - Runtime env. variables
+ENV \
+	HOME=${DOCKER_USER_HOME:-"/home/cppsharp"} \
+	\
+	NUGET_VERSION=${NUGET_VERSION:-4.1.0} \
+	MONO_VERSION=${MONO_VERSION:-4.6.2} \
+	PAKET_VERSION=${PAKET_VERSION:-5.89.2} \
+	\
+	LANG=C.UTF-8 \
+	CXX="g++" \
+	CC="gcc" \
+	PKG_CONFIG_PATH="/usr/lib/pkgconfig/:/usr/local/lib/pkgconfig/"
+
+## #################################################################
+## Create user + Install runtime dependencies
+## #################################################################
+
+RUN \
+    adduser \
+        -h $DOCKER_USER_HOME \
+        -u $DOCKER_USER_GID \
+        -s /usr/sbin/nologin \
+        -D \
+        $DOCKER_USER \
+    && apk --no-cache --update --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing/ --allow-untrusted --no-progress add ${RUNTIME_APK}
+
+## #################################################################
+## Copy sources
+## #################################################################
+
+# Copy source code to the container & build it
+COPY . ${DOCKER_USER_HOME}
+WORKDIR ${DOCKER_USER_HOME}
+
+## #################################################################
+## Security
+## #################################################################
+# RUN chown -R nobody "." && \
+#     if [ ! -e "./local_config.py" ]; then \
+#         cp "./local_config.py.template" "./local_config.py" ; \
+#     fi
+# USER nobody
+# CMD [ "invoke", "app.run", "--no-install-dependencies", "--host", "0.0.0.0" ]
+
+WORKDIR ${DOCKER_USER_HOME}/build/docker
+
+# git clone --recursive --depth=1 -b master https://github.com/premake/premake-core /home/sniperkit/deps/premake-core
+RUN apk --no-cache --update --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing/ --allow-untrusted add ${BUILD_APK} 
+
+#	&& ./docker/compile-premake5.sh \
+#	&& ./docker/deploy-premake5.sh \
+#	&& ./docker/install-nuget.sh \
+#	&& ./docker/install-paket.sh \
+#	&& ./docker/install-libgit2.sh \
+#	&& ./docker/compile-llvm.sh \
+#	&& ./docker/compile-cppsharp.sh \
+
+WORKDIR ${DOCKER_USER_HOME}/dist
+
+CMD ["/bin/bash"]

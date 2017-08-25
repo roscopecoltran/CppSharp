@@ -1,0 +1,31 @@
+###########################################################################
+#                                                                 		  
+#  Build the image:                                               		  
+#    $ docker build -t cppsharp -f Dockerfile.dist --no-cache . 
+#                                                                 		  
+#  Run the container:                                             		  
+#    $ docker run -ti --rm -v $(pwd):/app cppsharp
+#                                                                 		  
+###########################################################################
+
+FROM alpine:3.6
+LABEL maintainer "Luc Michalski <michalski.luc@gmail.com>"
+
+ARG DOCKER_USER=${DOCKER_USER:-"cppsharp"}
+ARG DOCKER_USER_GID=${DOCKER_USER_GID:-"1000"}
+ARG DOCKER_USER_UID=${DOCKER_USER_UID:-"1000"}
+
+ENV DOCKER_USER_HOME=${DOCKER_USER_HOME:-"/home/$DOCKER_USER"}
+ENV HOME=${DOCKER_USER_HOME:-"/home/cppsharp"}
+
+ENV NUGET_VERSION=${NUGET_VERSION:-4.1.0} \
+	MONO_VERSION=${MONO_VERSION:-4.6.2} \
+	PAKET_VERSION=${PAKET_VERSION:-5.89.2}
+
+# Copy source code to the container & build it
+COPY . ${DOCKER_USER_HOME}
+WORKDIR ${DOCKER_USER_HOME}
+
+ENV PATH=${DOCKER_USER_HOME}:$PATH
+
+ENTRYPOINT ["/bin/sh"]

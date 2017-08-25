@@ -1,0 +1,98 @@
+###########################################################################
+#                                                                 		  
+#  Build the image:                                               		  
+#    $ docker build -t cppsharpd -f Dockerfile.dev --no-cache . 
+#                                                                 		  
+#  Run the container:                                             		  
+#    $ docker run -ti --rm -v $(pwd)/dist/lib:/home/cppsharp/build/gmake/Release_x64 cppsharpd 
+#                                                                 		  
+###########################################################################
+
+FROM alpine:3.6
+# FROM frolvlad/alpine-glibc:alpine-3.6
+
+LABEL maintainer "Luc Michalski <michalski.luc@gmail.com>"
+
+ARG DOCKER_USER=${DOCKER_USER:-"cppsharp"}
+ARG DOCKER_USER_GID=${DOCKER_USER_GID:-"1000"}
+ARG DOCKER_USER_UID=${DOCKER_USER_UID:-"1000"}
+
+ARG BUILD_APK=${BUILD_APK:-"musl-dev make cmake linux-headers g++ gcc \
+							mono-dev openssl-dev autoconf automake tar zip ninja llvm llvm-dev"}
+
+ARG RUNTIME_APK=${RUNTIME_APK:-"ca-certificates openssl libssh2 bash git lua curl wget tar \
+								mono cppcheck valgrind findutils pkgconf libtool"}
+
+ENV DOCKER_USER_HOME=${DOCKER_USER_HOME:-"/home/$DOCKER_USER"}
+ENV HOME=${DOCKER_USER_HOME:-"/home/cppsharp"}
+
+ENV NUGET_VERSION=${NUGET_VERSION:-4.1.0} \
+	MONO_VERSION=${MONO_VERSION:-4.6.2} \
+	PAKET_VERSION=${PAKET_VERSION:-5.89.2}
+
+RUN \
+    adduser \
+        -h $DOCKER_USER_HOME \
+        -u $DOCKER_USER_GID \
+        -s /usr/sbin/nologin \
+        -D \
+        $DOCKER_USER \
+    && apk --no-cache --update --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing/ --allow-untrusted --no-progress add ${RUNTIME_APK}
+
+# Copy source code to the container & build it
+COPY . ${DOCKER_USER_HOME}
+WORKDIR ${DOCKER_USER_HOME}
+
+ENV CXX="g++" \
+	CC="gcc" \
+	PREMAKE_VCS_URI=${PREMAKE_VCS_URI:-"github.com/premake/premake-core"} \
+	PREMAKE_VCS_BRANCH=${PREMAKE_VCS_BRANCH:-"master"}
+
+# git clone --recursive --depth=1 -b master https://github.com/premake/premake-core /home/sniperkit/deps/premake-core
+RUN apk --no-cache --update --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing/ --allow-untrusted add ${BUILD_APK} \
+	&& git clone --recursive --depth=1 -b ${PREMAKE_VCS_BRANCH} https://${PREMAKE_VCS_URI} ${DOCKER_USER_HOME}/deps/premake-core \
+	&& cd ${DOCKER_USER_HOME}/deps/premake-core \
+	&& make -f Bootstrap.mak linux \
+	&& mkdir -p /usr/local/sbin/ \
+	&& cp -f ./bin/release/premake5 ${DOCKER_USER_HOME}/build/premake5 \
+	&& chmod +x ${DOCKER_USER_HOME}/build/premake5 \
+	&& wget -P /usr/lib/mono https://dist.nuget.org/win-x86-commandline/v${NUGET_VERSION}/nuget.exe \
+ 	&& echo -e '#!/bin/sh\nexec /usr/bin/mono $MONO_OPTIONS /usr/lib/mono/nuget.exe "$@"' > /usr/bin/nuget \
+ 	&& chmod +x /usr/bin/nuget \
+ 	&& nuget \
+ 	&& curl -sL https://raw.githubusercontent.com/fsprojects/Paket/${PAKET_VERSION}/install.sh | /bin/sh \
+	&& paket --version \
+	&& mkdir -p ${DOCKER_USER_HOME}/deps/llvm/build 
+
+	# \
+	# && cd ${DOCKER_USER_HOME}/deps/llvm/build \
+	# && cmake -G Ninja -DCLANG_BUILD_EXAMPLES=false \
+	#                   -DCLANG_INCLUDE_DOCS=false \
+	#                   -DCLANG_INCLUDE_TESTS=false \
+	#                   -DCLANG_INCLUDE_DOCS=false \
+	#                   -DCLANG_BUILD_EXAMPLES=false \
+	#                   -DLLVM_TARGETS_TO_BUILD="X86" \
+	#                   -DLLVM_INCLUDE_EXAMPLES=false \
+	#                   -DLLVM_INCLUDE_DOCS=false \
+	#                   -DLLVM_INCLUDE_TESTS=false \
+	#                   .. \
+	# && ninja
+
+	# && ./premake5 --file=./scripts/LLVM.lua download_llvm \
+
+# RUN cd ${DOCKER_USER_HOME}/build/ \
+# 	&& ./Compile.sh
+
+# https://github.com/roscopecoltran/CppSharp/blob/sniperkit/docs/GettingStarted.md
+# RUN cd ${DOCKER_USER_HOME}/build \
+#	&& verbose=true make -C gmake config=release_x64
+
+	# \
+	# && && apk --no-cache --no-progress del build-deps
+
+# build/Compile.sh && build/RunTests.sh
+# premake5 --file=./build/scripts/LLVM.lua download_llvm
+
+WORKDIR ${DOCKER_USER_HOME}/build
+
+CMD ["/bin/bash"]
